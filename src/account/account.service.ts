@@ -17,7 +17,7 @@ export class AccountService {
       .getClient()
       .from('account')
       .select(
-        'id, created_at, name, profile_image, status, email, password, refresh_token, token_expires_at',
+        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
       );
 
     if (error) {
@@ -32,10 +32,10 @@ export class AccountService {
       .getClient()
       .from('account')
       .select(
-        'id, created_at, name, profile_image, status, email, password, refresh_token, token_expires_at',
+        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
       )
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new Error(error.message);
@@ -49,10 +49,10 @@ export class AccountService {
       .getClient()
       .from('account')
       .select(
-        'id, created_at, name, profile_image, status, email, password, refresh_token, token_expires_at',
+        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
       )
       .eq('email', email)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new Error(error.message);
@@ -74,10 +74,7 @@ export class AccountService {
       throw new Error('Invalid email or password');
     }
 
-    const accessToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
-      { expiresIn: '15m' },
-    );
+    const accessToken = this.jwtService.sign({ sub: user.id });
 
     const refreshTokenPlain = crypto.randomBytes(64).toString('hex');
     const refreshTokenHash = await bcrypt.hash(refreshTokenPlain, 10);
@@ -88,32 +85,40 @@ export class AccountService {
       throw new Error('Fail to update refresh token');
     }
 
-    return { accessToken };
+    return { user, accessToken };
   }
 
-  async checkAccessToken(id: string, email: string, accessToken: string) {
+  async checkAccessToken({
+    id,
+    accessToken,
+  }: {
+    id: string;
+    accessToken: string;
+  }) {
     try {
-      const payload = this.jwtService.verify(accessToken);
+      const payload = await this.jwtService.verifyAsync(accessToken);
       return { accessToken, expired: false };
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
         const user = await this.findById(id);
+
+        if (!user) {
+          throw new Error('User not login');
+        }
+
         const now = new Date();
 
         if (now > user.token_expires_at) {
           try {
-            const accessToken = await this.renewRefreshToken(id, email);
-            return { accessToken, expired: true };
+            const accessToken = await this.renewRefreshToken(id);
+            return { user, accessToken, expired: true };
           } catch (error) {
             throw new Error(error.message);
           }
         } else {
-          const accessToken = this.jwtService.sign(
-            { sub: user.id, email: user.email },
-            { expiresIn: '15m' },
-          );
+          const accessToken = this.jwtService.sign({ sub: user.id });
 
-          return { accessToken, expired: true };
+          return { user, accessToken, expired: true };
         }
       }
     }
@@ -139,12 +144,9 @@ export class AccountService {
     return data;
   }
 
-  async renewRefreshToken(id: string, email: string) {
+  async renewRefreshToken(id: string) {
     try {
-      const newAccessToken = this.jwtService.sign(
-        { sub: id, email: email },
-        { expiresIn: '15m' },
-      );
+      const newAccessToken = this.jwtService.sign({ sub: id });
       const newRefreshTokenPlain = crypto.randomBytes(64).toString('hex');
       const newRefreshTokenHash = await bcrypt.hash(newRefreshTokenPlain, 10);
 
@@ -177,20 +179,19 @@ export class AccountService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await this.addAccount(
-      ulid(),
-      new Date().toISOString(),
-      email,
-      name,
-      hashedPassword,
-      '',
-      1,
-    );
-
-    return {
-      status: 'ok',
-      message: 'User registered successfully',
-    };
+    try {
+      await this.addAccount(
+        ulid(),
+        new Date().toISOString(),
+        email,
+        name,
+        hashedPassword,
+        '',
+        1,
+      );
+    } catch (error) {
+      throw new Error(error.message);
+    }
   }
 
   async addAccount(

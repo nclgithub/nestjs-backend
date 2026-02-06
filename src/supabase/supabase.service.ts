@@ -8,8 +8,8 @@ export class SupabaseService {
 
   constructor(private config: ConfigService) {
     this.client = createClient(
-      this.config.get<string>("SUPABASE_URL")!,
-      this.config.get<string>("SUPABASE_SERVICE_ROLE_KEY")!,
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
   }
 
