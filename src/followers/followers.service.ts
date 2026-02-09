@@ -26,7 +26,8 @@ export class FollowersService {
       .from('account')
       .select(
         'id, created_at, follower_id, followed_id, account:follower_id (id, name, profile_image)',
-      ).eq('followed_id', id);
+      )
+      .eq('followed_id', id);
 
     if (error) {
       throw new Error(error.message);
@@ -41,7 +42,8 @@ export class FollowersService {
       .from('count(account)')
       .select(
         'id, created_at, follower_id, followed_id, account:follower_id (id, name, profile_image)',
-      ).eq('followed_id', id);
+      )
+      .eq('followed_id', id);
 
     if (error) {
       throw new Error(error.message);
@@ -56,7 +58,8 @@ export class FollowersService {
       .from('account')
       .select(
         'id, created_at, follower_id, followed_id, account:followed_id (id, name, profile_image)',
-      ).eq('follower_id', id);
+      )
+      .eq('follower_id', id);
 
     if (error) {
       throw new Error(error.message);
@@ -68,10 +71,9 @@ export class FollowersService {
   async findFollowingNumber(id: string) {
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('count(account)')
-      .select(
-        'id, created_at, follower_id, followed_id, account:followed_id (id, name, profile_image)',
-      ).eq('follower_id', id);
+      .from('account')
+      .select('*', { count: 'exact', head: true })
+      .eq('follower_id', id);
 
     if (error) {
       throw new Error(error.message);

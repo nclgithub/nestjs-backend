@@ -15,7 +15,7 @@ export class FollowersController {
     }
   }
 
-  @Get('follower')
+  @Get(':id/follower')
   async findFollower(@Param('id') id: string) {
     try {
       const account = await this.followersService.findFollower(id);
@@ -25,7 +25,7 @@ export class FollowersController {
     }
   }
 
-  @Get('follower/number')
+  @Get(':id/follower/number')
   async findFollowerNumber(@Param('id') id: string) {
     try {
       const account = await this.followersService.findFollowerNumber(id);
@@ -35,7 +35,7 @@ export class FollowersController {
     }
   }
 
-  @Get('following')
+  @Get(':id/following')
   async findFollowing(@Param('id') id: string) {
     try {
       const account = await this.followersService.findFollowing(id);
@@ -45,7 +45,7 @@ export class FollowersController {
     }
   }
 
-  @Get('following/number')
+  @Get(':id/following/number')
   async findFollowingNumber(@Param('id') id: string) {
     try {
       const account = await this.followersService.findFollowingNumber(id);

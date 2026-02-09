@@ -58,7 +58,6 @@ export class AccountController {
   async checkAccessToken(@Body() userInfo) {
     try {
       const result = await this.accountService.checkAccessToken(userInfo);
-      console.log(result);
       return { success: true, data: result };
     } catch (err) {
       return { success: false, error: err.message };
