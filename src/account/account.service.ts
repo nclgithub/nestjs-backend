@@ -10,14 +10,13 @@ export class AccountService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   async findAll() {
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('account')
-      .select(
-        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
+      .from('account').select(
+        '*',
       );
 
     if (error) {
@@ -32,7 +31,7 @@ export class AccountService {
       .getClient()
       .from('account')
       .select(
-        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
+        '*',
       )
       .eq('id', id)
       .maybeSingle();
@@ -49,7 +48,7 @@ export class AccountService {
       .getClient()
       .from('account')
       .select(
-        'id, created_at, name, profile_image, profile_description, status, email, password, refresh_token, token_expires_at',
+        '*',
       )
       .eq('email', email)
       .maybeSingle();
@@ -222,5 +221,182 @@ export class AccountService {
     }
 
     return data;
+  }
+
+  async findUserPost(id: string) {
+    const { data, error } = await this.supabaseService.getClient()
+      .from('posts')
+      .select('*, account:user_id (id, name, profile_image), likes!left (user_id)')
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const dataWithLikes = data.map(item => {
+      return {
+        ...item,
+        isLiked: item.likes.length > 0,
+      };
+    });
+
+    return dataWithLikes;
+  }
+
+  async findUserPostNumber(id: string) {
+    const { count, error } = await this.supabaseService.getClient()
+      .from('posts')
+      .select('*', { count: "exact", head: true })
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count || 0;
+  }
+
+  async findUserFollower(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select(
+        'account:follower_id (id, name, profile_image)',
+      )
+      .eq('followed_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data.map(item => item.account);
+  }
+
+  async findUserFollowerNumber(id: string) {
+    const { count, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select('*', { count: 'exact', head: true })
+      .eq('followed_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count;
+  }
+
+  async findUserFollowing(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select(
+        'account:followed_id (id, name, profile_image)',
+      )
+      .eq('follower_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data.map(item => item.account);
+  }
+
+  async findUserFollowingNumber(id: string) {
+    const { count, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select('*', { count: 'exact', head: true })
+      .eq('follower_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count;
+  }
+
+  async findUserLikesPost(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('likes')
+      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data.map(item => { return { ...item.posts, isLiked: true } });
+  }
+
+  async findUserLikesNumber(id: string) {
+    const { count, error } = await this.supabaseService
+      .getClient()
+      .from('likes')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count;
+  }
+
+  async findUserComments(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('comments')
+      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data.map(item => item.posts);
+  }
+
+  async findUserCommentsNumber(id: string) {
+    const { count, error } = await this.supabaseService
+      .getClient()
+      .from('comments')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count;
+  }
+
+  async findUserCollections(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('collections')
+      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data.map(item => item.posts);
+  }
+
+  async findUserCollectionsNumber(id: string) {
+    const { count, error } = await this.supabaseService
+      .getClient()
+      .from('collections')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count;
   }
 }
