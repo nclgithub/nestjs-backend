@@ -9,12 +9,13 @@ import { CommentsModule } from './comments/comments.module';
 import { FollowsModule } from './follows/follows.module';
 import { CollectionsModule } from './collections/collections.module';
 import { LikesModule } from './likes/likes.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
-  imports: [SupabaseModule, AccountModule, PostsModule, LikesModule, CommentsModule, FollowsModule, CollectionsModule,
+  imports: [SupabaseModule, AccountModule, AuthModule, PostsModule, LikesModule, CommentsModule, FollowsModule, CollectionsModule,
     ConfigModule.forRoot({
       isGlobal: true,
-    }),
+    })
   ],
   controllers: [AppController],
   providers: [AppService],

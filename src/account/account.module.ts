@@ -1,16 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AccountController } from './account.controller';
 import { AccountService } from './account.service';
-import { JwtModule } from '@nestjs/jwt';
 
 @Module({
-  imports: [
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'defaultSecret',
-      signOptions: { expiresIn: '15m' },
-    }),
-  ],
   controllers: [AccountController],
-  providers: [AccountService]
+  providers: [AccountService],
+  exports: [AccountService],
 })
-export class AccountModule {}
+export class AccountModule { }

@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { FollowsService } from './follows.service';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('follows')
 export class FollowsController {
@@ -7,11 +8,27 @@ export class FollowsController {
 
     @Get()
     async findAll() {
-        try {
-            const account = await this.followsService.findAll();
-            return { success: true, data: account };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+        return await this.followsService.findAll();
+    }
+
+    @Post("follow")
+    @UseGuards(JwtAuthGuard)
+    async addFollowing(@Body() followInfo: { followed_id: string }, @Req() req) {
+        const userId = req.user.userId;
+        return await this.followsService.addFollowing(userId, followInfo.followed_id);
+    }
+
+    @Delete("unfollow")
+    @UseGuards(JwtAuthGuard)
+    async deleteFollowing(@Body() followInfo: { followed_id: string }, @Req() req) {
+        const userId = req.user.userId;
+        return await this.followsService.deleteFollowing(userId, followInfo.followed_id);
+    }
+
+    @Get("isfollowed/:id")
+    @UseGuards(JwtAuthGuard)
+    async checkIsFollowed(@Req() req, @Param('id') id: string) {
+        const userId = req.user.userId;
+        return await this.followsService.checkIsFollowed(userId, id);
     }
 }

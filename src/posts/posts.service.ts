@@ -5,19 +5,20 @@ import { SupabaseService } from 'src/supabase/supabase.service';
 export class PostsService {
     constructor(private readonly supabaseService: SupabaseService) { }
 
-    async findAll(id: string) {
+    async findAll(id?: string) {
         const { data, error } = await this.supabaseService.getClient()
             .from('posts')
-            .select('*, account:user_id (id, name, profile_image), likes!left (user_id)');
+            .select('*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id)');
 
         if (error) {
             throw new Error(error.message);
         }
 
-        const dataWithLikes = data.map(item => {
+        const dataWithLikes = data.map(({ likes, collections, ...rest }) => {
             return {
-                ...item,
-                isLiked: item.likes.length > 0,
+                ...rest,
+                isLiked: id ? likes.some(like => like.user_id === id) : false,
+                isCollected: id ? collections.some(collection => collection.user_id === id) : false,
             };
         });
 
@@ -26,10 +27,10 @@ export class PostsService {
         return shuffledData;
     }
 
-    async findById(id: string, postId: string) {
+    async findById(postId: string, id?: string) {
         const { data, error } = await this.supabaseService.getClient()
             .from('posts')
-            .select('*, account:user_id (id, name, profile_image), likes!left (user_id)')
+            .select('*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id)')
             .eq('id', postId)
             .single();
 
@@ -37,9 +38,11 @@ export class PostsService {
             throw new Error(error.message);
         }
 
+        const { likes, collections, ...rest } = data;
         const dataWithLikes = {
-            ...data,
-            isLiked: data.likes.length > 0,
+            ...rest,
+            isLiked: id ? likes.some(like => like.user_id === id) : false,
+            isCollected: id ? collections.some(collection => collection.user_id === id) : false,
         };
 
         return dataWithLikes;
@@ -77,7 +80,7 @@ export class PostsService {
         const { data, error } = await this.supabaseService
             .getClient()
             .from('comments')
-            .select('id, created_at, content, post_id, user_id, account:user_id (id, name, profile_image)')
+            .select('id, created_at, comment, post_id, user_id, account:user_id (id, name, profile_image)')
             .eq('post_id', id);
 
         if (error) {
@@ -127,5 +130,19 @@ export class PostsService {
         }
 
         return count;
+    }
+
+    async createPost(userId: string, title: string, description: string) {
+        const { data, error } = await this.supabaseService.getClient()
+            .from('posts')
+            .insert({ user_id: userId, title, description })
+            .select('*')
+            .single();
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        return data;
     }
 }

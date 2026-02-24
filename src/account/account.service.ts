@@ -1,26 +1,30 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
 import { ulid } from 'ulid';
-import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AccountService {
-  constructor(
-    private readonly supabaseService: SupabaseService,
-    private jwtService: JwtService,
-  ) { }
+  constructor(private readonly supabaseService: SupabaseService) { }
 
   async findAll() {
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('account').select(
-        '*',
-      );
+      .from('account')
+      .select('*');
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException('Unable to process request');
+    }
+
+    if (!data) {
+      return null;
     }
 
     return data;
@@ -30,14 +34,16 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select(
-        '*',
-      )
+      .select('*')
       .eq('id', id)
       .maybeSingle();
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException('Unable to process request');
+    }
+
+    if (!data) {
+      return null;
     }
 
     return data;
@@ -47,121 +53,22 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select(
-        '*',
-      )
+      .select('*')
       .eq('email', email)
       .maybeSingle();
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
+    }
+
+    if (!data) {
+      return null;
     }
 
     return data;
   }
 
-  async validateUser({ email, password }: { email: string; password: string }) {
-    const user = await this.findByEmail(email);
-
-    if (!user) {
-      throw new Error('Invalid email or password');
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatch) {
-      throw new Error('Invalid email or password');
-    }
-
-    const accessToken = this.jwtService.sign({ sub: user.id });
-
-    const refreshTokenPlain = crypto.randomBytes(64).toString('hex');
-    const refreshTokenHash = await bcrypt.hash(refreshTokenPlain, 10);
-
-    try {
-      await this.updateRefreshToken(user.id, refreshTokenHash);
-    } catch (err) {
-      throw new Error('Fail to update refresh token');
-    }
-
-    return { user, accessToken };
-  }
-
-  async checkAccessToken({
-    id,
-    accessToken,
-  }: {
-    id: string;
-    accessToken: string;
-  }) {
-    try {
-      const payload = await this.jwtService.verifyAsync(accessToken);
-      return { accessToken, expired: false };
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        const user = await this.findById(id);
-
-        if (!user) {
-          throw new Error('User not login');
-        }
-
-        const now = new Date();
-
-        if (now > user.token_expires_at) {
-          try {
-            const accessToken = await this.renewRefreshToken(id);
-            return { user, accessToken, expired: true };
-          } catch (error) {
-            throw new Error(error.message);
-          }
-        } else {
-          const accessToken = this.jwtService.sign({ sub: user.id });
-
-          return { user, accessToken, expired: true };
-        }
-      }
-    }
-  }
-
-  async updateRefreshToken(id: string, refreshToken: string) {
-    const now = new Date();
-    const expired_date = new Date();
-    expired_date.setDate(now.getDate() + 30);
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('account')
-      .update({
-        refresh_token: refreshToken,
-        token_expires_at: expired_date.toISOString(),
-      })
-      .eq('id', id);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data;
-  }
-
-  async renewRefreshToken(id: string) {
-    try {
-      const newAccessToken = this.jwtService.sign({ sub: id });
-      const newRefreshTokenPlain = crypto.randomBytes(64).toString('hex');
-      const newRefreshTokenHash = await bcrypt.hash(newRefreshTokenPlain, 10);
-
-      try {
-        await this.updateRefreshToken(id, newRefreshTokenHash);
-      } catch (error) {
-        throw new Error('Refresh token update fail');
-      }
-
-      return { accessToken: newAccessToken };
-    } catch (err) {
-      throw new UnauthorizedException('Refresh token invalid');
-    }
-  }
-
-  async registerUser({
+  async addAccount({
     email,
     password,
     name,
@@ -170,167 +77,183 @@ export class AccountService {
     password: string;
     name: string;
   }) {
+    if (!email || !password || !name) {
+      throw new BadRequestException('Email, password, and name must be provided');
+    }
+
     const user = await this.findByEmail(email);
 
     if (user) {
-      throw new Error('Email in used');
+      throw new ConflictException('Email in used');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    try {
-      await this.addAccount(
-        ulid(),
-        new Date().toISOString(),
-        email,
-        name,
-        hashedPassword,
-        '',
-        1,
-      );
-    } catch (error) {
-      throw new Error(error.message);
-    }
-  }
-
-  async addAccount(
-    id: string,
-    created_at: string,
-    email: string,
-    name: string,
-    password: string,
-    profile_image: string,
-    status: number,
-  ) {
-    const { data, error } = await this.supabaseService
+    const { error } = await this.supabaseService
       .getClient()
       .from('account')
       .insert({
-        id,
-        created_at,
+        id: ulid(),
+        created_at: new Date().toISOString(),
         email,
         name,
-        password,
-        profile_image,
-        status,
+        password: hashedPassword,
+        profile_image: '',
+        status: 1,
       })
       .select();
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data;
+    return 'Successfully add account';
   }
 
   async findUserPost(id: string) {
-    const { data, error } = await this.supabaseService.getClient()
+    const { data, error } = await this.supabaseService
+      .getClient()
       .from('posts')
-      .select('*, account:user_id (id, name, profile_image), likes!left (user_id)')
+      .select(
+        '*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id)',
+      )
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    const dataWithLikes = data.map(item => {
+    return (data || []).map(({ likes, collections, ...rest }) => {
       return {
-        ...item,
-        isLiked: item.likes.length > 0,
+        ...rest,
+        isLiked: likes.length > 0,
+        isCollected: collections.length > 0,
       };
     });
-
-    return dataWithLikes;
   }
 
   async findUserPostNumber(id: string) {
-    const { count, error } = await this.supabaseService.getClient()
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
+    const { count, error } = await this.supabaseService
+      .getClient()
       .from('posts')
-      .select('*', { count: "exact", head: true })
+      .select('*', { count: 'exact', head: true })
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
     return count || 0;
   }
 
   async findUserFollower(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('account')
-      .select(
-        'account:follower_id (id, name, profile_image)',
-      )
+      .from('follows')
+      .select('account:follower_id (id, name, profile_image)')
       .eq('followed_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data.map(item => item.account);
+    return (data || []).map(({ account }) => account);
   }
 
   async findUserFollowerNumber(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { count, error } = await this.supabaseService
       .getClient()
-      .from('account')
+      .from('follows')
       .select('*', { count: 'exact', head: true })
       .eq('followed_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return count;
+    return count || 0;
   }
 
   async findUserFollowing(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
-      .from('account')
-      .select(
-        'account:followed_id (id, name, profile_image)',
-      )
+      .from('follows')
+      .select('account:followed_id (id, name, profile_image)')
       .eq('follower_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data.map(item => item.account);
+    return (data || []).map(({ account }) => account);
   }
 
   async findUserFollowingNumber(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { count, error } = await this.supabaseService
       .getClient()
-      .from('account')
+      .from('follows')
       .select('*', { count: 'exact', head: true })
       .eq('follower_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return count;
+    return count || 0;
   }
 
   async findUserLikesPost(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('likes')
-      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+      .select(
+        'posts:post_id (*, account:user_id (id, name, profile_image))',
+      )
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data.map(item => { return { ...item.posts, isLiked: true } });
+    return (data || []).map(({ posts }) => {
+      if (!posts) return null;
+      return {
+        ...posts,
+        isLiked: true,
+        isCollected: false,
+      };
+    }).filter((item) => item !== null);
   }
 
   async findUserLikesNumber(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { count, error } = await this.supabaseService
       .getClient()
       .from('likes')
@@ -338,13 +261,17 @@ export class AccountService {
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return count;
+    return count || 0;
   }
 
   async findUserComments(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('comments')
@@ -352,13 +279,17 @@ export class AccountService {
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data.map(item => item.posts);
+    return (data || []).map(({ posts }) => posts);
   }
 
   async findUserCommentsNumber(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { count, error } = await this.supabaseService
       .getClient()
       .from('comments')
@@ -366,13 +297,17 @@ export class AccountService {
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return count;
+    return count || 0;
   }
 
   async findUserCollections(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { data, error } = await this.supabaseService
       .getClient()
       .from('collections')
@@ -380,13 +315,17 @@ export class AccountService {
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return data.map(item => item.posts);
+    return (data || []).map(({ posts }) => posts);
   }
 
   async findUserCollectionsNumber(id: string) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
     const { count, error } = await this.supabaseService
       .getClient()
       .from('collections')
@@ -394,9 +333,28 @@ export class AccountService {
       .eq('user_id', id);
 
     if (error) {
-      throw new Error(error.message);
+      throw new InternalServerErrorException(error.message);
     }
 
-    return count;
+    return count || 0;
+  }
+  async updateAccount(id: string, updateInfo: { name?: string; profile_description?: string; profile_image?: string }) {
+    if (!id) {
+      throw new BadRequestException('ID must be provided');
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .update(updateInfo)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    return data;
   }
 }

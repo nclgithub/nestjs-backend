@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Post, Delete } from '@nestjs/common';
+import { Body, Controller, Get, Post, Delete, UseGuards, Param, Req } from '@nestjs/common';
 import { LikesService } from './likes.service';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('likes')
 export class LikesController {
@@ -7,31 +8,20 @@ export class LikesController {
 
     @Get()
     async findAll() {
-        try {
-            const likes = await this.likesService.findAll();
-            return { success: true, data: likes };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+        return await this.likesService.findAll();
     }
 
-    @Post('add')
-    async addLikes(@Body() likeInfo) {
-        try {
-            await this.likesService.addLikes(likeInfo);
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+    @Post(':post_id/add')
+    @UseGuards(JwtAuthGuard)
+    async addLikes(@Param("post_id") postId: string, @Req() req) {
+        const userId = req.user.userId;
+        return await this.likesService.addLikes(postId, userId);
     }
 
-    @Delete('delete')
-    async deleteLikes(@Body() likeInfo) {
-        try {
-            await this.likesService.deleteLikes(likeInfo);
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+    @Delete(':post_id/delete')
+    @UseGuards(JwtAuthGuard)
+    async deleteLikes(@Param("post_id") postId: string, @Req() req) {
+        const userId = req.user.userId;
+        return await this.likesService.deleteLikes(postId, userId);
     }
 }

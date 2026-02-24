@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { CommentsService } from './comments.service';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('comments')
 export class CommentsController {
@@ -7,11 +8,20 @@ export class CommentsController {
 
     @Get()
     async findAll() {
-        try {
-            const comments = await this.commentsService.findAll();
-            return { success: true, data: comments };
-        } catch (err) {
-            return { success: false, error: err.message };
-        }
+        return await this.commentsService.findAll();
+    }
+
+    @Post("add")
+    @UseGuards(JwtAuthGuard)
+    async addComment(@Body() commentInfo: { post_id: string, comment: string }, @Req() req) {
+        const userId = req.user.userId;
+        return await this.commentsService.addComment(commentInfo.post_id, userId, commentInfo.comment);
+    }
+
+    @Delete("delete")
+    @UseGuards(JwtAuthGuard)
+    async deleteComment(@Body() commentInfo: { post_id: string, comment: string }, @Req() req) {
+        const userId = req.user.userId;
+        return await this.commentsService.deleteComment(commentInfo.post_id, userId, commentInfo.comment);
     }
 }
