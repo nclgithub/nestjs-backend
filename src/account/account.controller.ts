@@ -1,13 +1,11 @@
 import {
   BadRequestException,
   Body,
-  ConsoleLogger,
   Controller,
   Get,
   Param,
   Post,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AccountService } from './account.service';
@@ -16,11 +14,6 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 @Controller('account')
 export class AccountController {
   constructor(private readonly accountService: AccountService) { }
-
-  @Get()
-  async findAll() {
-    return await this.accountService.findAll();
-  }
 
   @Post('add')
   async addAccount(@Body() userInfo) {
@@ -111,11 +104,14 @@ export class AccountController {
     return await this.accountService.findUserCollectionsNumber(userId);
   }
 
+  /**
+   * GET /account/:id — returns public profile info of any user by ID.
+   * Protected so only authenticated users can look up profiles.
+   */
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findById(@Req() req) {
-    const userId = req.user.userId;
-    return await this.accountService.findById(userId);
+  async findById(@Param('id') id: string) {
+    return await this.accountService.findPublicById(id);
   }
 
   @Post('update')

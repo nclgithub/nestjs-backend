@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
 
 @Injectable()
@@ -36,7 +36,7 @@ export class CollectionsService {
     async addCollection(post_id: string, user_id: string) {
         const collectionExist = await this.findCollectionExist(post_id, user_id);
         if (collectionExist.length > 0) {
-            throw new InternalServerErrorException('You already add this collection');
+            throw new BadRequestException('You already added this post to your collection');
         }
 
         const { error } = await this.supabaseService
@@ -58,7 +58,7 @@ export class CollectionsService {
     async deleteCollection(post_id: string, user_id: string) {
         const collectionExist = await this.findCollectionExist(post_id, user_id);
         if (collectionExist.length === 0) {
-            throw new InternalServerErrorException('You not add this collection');
+            throw new BadRequestException('This post is not in your collection');
         }
 
         const { error } = await this.supabaseService

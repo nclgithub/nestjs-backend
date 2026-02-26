@@ -6,11 +6,6 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 export class LikesController {
     constructor(private readonly likesService: LikesService) { }
 
-    @Get()
-    async findAll() {
-        return await this.likesService.findAll();
-    }
-
     @Post(':post_id/add')
     @UseGuards(JwtAuthGuard)
     async addLikes(@Param("post_id") postId: string, @Req() req) {

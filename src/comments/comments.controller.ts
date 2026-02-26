@@ -6,11 +6,6 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 export class CommentsController {
     constructor(private readonly commentsService: CommentsService) { }
 
-    @Get()
-    async findAll() {
-        return await this.commentsService.findAll();
-    }
-
     @Post("add")
     @UseGuards(JwtAuthGuard)
     async addComment(@Body() commentInfo: { post_id: string, comment: string }, @Req() req) {

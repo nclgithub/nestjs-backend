@@ -16,6 +16,10 @@ export class AuthService {
     async login(email: string, password: string) {
         const user = await this.accountService.findByEmail(email);
 
+        if (!user) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
         const passwordValid = await bcrypt.compare(password, user.password);
         if (!passwordValid) {
             throw new UnauthorizedException('Invalid credentials');
@@ -26,7 +30,10 @@ export class AuthService {
 
         await this.updateRefreshToken(user.id, refreshToken);
 
-        return { user, accessToken, refreshToken };
+        // Never expose password hash or refresh_token to the client
+        const { password: _pw, refresh_token: _rt, ...safeUser } = user;
+
+        return { user: safeUser, accessToken, refreshToken };
     }
 
     async refreshToken(refreshToken: string) {
@@ -36,6 +43,8 @@ export class AuthService {
             });
 
             const user = await this.accountService.findById(payload.sub);
+
+            if (!user) throw new UnauthorizedException('User not found');
 
             const isMatch = await bcrypt.compare(refreshToken, user.refresh_token);
             if (!isMatch) throw new UnauthorizedException('Refresh token mismatch');

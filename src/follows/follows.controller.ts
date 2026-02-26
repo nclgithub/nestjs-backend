@@ -6,11 +6,6 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 export class FollowsController {
     constructor(private readonly followsService: FollowsService) { }
 
-    @Get()
-    async findAll() {
-        return await this.followsService.findAll();
-    }
-
     @Post("follow")
     @UseGuards(JwtAuthGuard)
     async addFollowing(@Body() followInfo: { followed_id: string }, @Req() req) {

@@ -13,11 +13,12 @@ import { ulid } from 'ulid';
 export class AccountService {
   constructor(private readonly supabaseService: SupabaseService) { }
 
+  /** Internal-only: returns public columns for all accounts (never expose via a route). */
   async findAll() {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select('*');
+      .select('id, created_at, email, name, profile_image, profile_description, status');
 
     if (error) {
       throw new InternalServerErrorException('Unable to process request');
@@ -30,6 +31,10 @@ export class AccountService {
     return data;
   }
 
+  /**
+   * Internal use only (auth layer). Returns full row including hashed password
+   * and refresh_token. Never send this data directly to the client.
+   */
   async findById(id: string) {
     const { data, error } = await this.supabaseService
       .getClient()
@@ -49,16 +54,40 @@ export class AccountService {
     return data;
   }
 
+  /** Client-safe: returns only public profile fields for any user by ID. */
+  async findPublicById(id: string) {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select('id, created_at, name, profile_image, profile_description, status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      throw new InternalServerErrorException('Unable to process request');
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    return data;
+  }
+
+  /**
+   * Internal use only (auth layer). Returns full row so the caller can verify
+   * the hashed password. Never forward this data to the client.
+   */
   async findByEmail(email: string) {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select('*')
+      .select('id, email, password, refresh_token, name, profile_image, profile_description, status')
       .eq('email', email)
       .maybeSingle();
 
     if (error) {
-      throw new InternalServerErrorException(error.message);
+      throw new InternalServerErrorException('Unable to process request');
     }
 
     if (!data) {
@@ -104,10 +133,10 @@ export class AccountService {
       .select();
 
     if (error) {
-      throw new InternalServerErrorException(error.message);
+      throw new InternalServerErrorException('Unable to process request');
     }
 
-    return 'Successfully add account';
+    return { message: 'Account created successfully' };
   }
 
   async findUserPost(id: string) {
@@ -115,7 +144,7 @@ export class AccountService {
       .getClient()
       .from('posts')
       .select(
-        '*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id)',
+        '*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count)',
       )
       .eq('user_id', id);
 
@@ -123,11 +152,13 @@ export class AccountService {
       throw new InternalServerErrorException(error.message);
     }
 
-    return (data || []).map(({ likes, collections, ...rest }) => {
+    return (data || []).map(({ likes, collections, likes_count, collections_count, ...rest }: any) => {
       return {
         ...rest,
         isLiked: likes.length > 0,
         isCollected: collections.length > 0,
+        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
+        saved_num: (collections_count as any)?.[0]?.count ?? 0,
       };
     });
   }
@@ -231,7 +262,7 @@ export class AccountService {
       .getClient()
       .from('likes')
       .select(
-        'posts:post_id (*, account:user_id (id, name, profile_image))',
+        'posts:post_id (*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count))',
       )
       .eq('user_id', id);
 
@@ -239,14 +270,17 @@ export class AccountService {
       throw new InternalServerErrorException(error.message);
     }
 
-    return (data || []).map(({ posts }) => {
+    return (data || []).map(({ posts }: any) => {
       if (!posts) return null;
+      const { likes, collections, likes_count, collections_count, ...rest } = posts;
       return {
-        ...posts,
-        isLiked: true,
-        isCollected: false,
+        ...rest,
+        isLiked: (likes || []).some((l: any) => l.user_id === id),
+        isCollected: (collections || []).some((c: any) => c.user_id === id),
+        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
+        saved_num: (collections_count as any)?.[0]?.count ?? 0,
       };
-    }).filter((item) => item !== null);
+    }).filter((item: any) => item !== null);
   }
 
   async findUserLikesNumber(id: string) {
@@ -311,14 +345,24 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('collections')
-      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+      .select('posts:post_id (*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count))')
       .eq('user_id', id);
 
     if (error) {
       throw new InternalServerErrorException(error.message);
     }
 
-    return (data || []).map(({ posts }) => posts);
+    return (data || []).map(({ posts }: any) => {
+      if (!posts) return null;
+      const { likes, collections, likes_count, collections_count, ...rest } = posts;
+      return {
+        ...rest,
+        isLiked: (likes || []).some((l: any) => l.user_id === id),
+        isCollected: (collections || []).some((c: any) => c.user_id === id),
+        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
+        saved_num: (collections_count as any)?.[0]?.count ?? 0,
+      };
+    }).filter((item: any) => item !== null);
   }
 
   async findUserCollectionsNumber(id: string) {
@@ -348,11 +392,11 @@ export class AccountService {
       .from('account')
       .update(updateInfo)
       .eq('id', id)
-      .select()
+      .select('id, created_at, name, profile_image, profile_description, status')
       .maybeSingle();
 
     if (error) {
-      throw new InternalServerErrorException(error.message);
+      throw new InternalServerErrorException('Unable to process request');
     }
 
     return data;
