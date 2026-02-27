@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { ulid } from 'ulid';
 
 @Injectable()
@@ -137,6 +138,50 @@ export class AccountService {
     }
 
     return { message: 'Account created successfully' };
+  }
+
+  /**
+   * Finds an existing account by email or creates a new "Google" account.
+   * Google accounts are given a random locked password they can never use
+   * for regular email/password sign-in.
+   */
+  async findOrCreateGoogleAccount({
+    email,
+    name,
+    profile_image,
+  }: {
+    email: string;
+    name: string;
+    profile_image: string;
+  }) {
+    const existing = await this.findByEmail(email);
+    if (existing) return existing;
+
+    // Random locked password — Google users authenticate via OAuth only
+    const lockedPassword = await bcrypt.hash(
+      crypto.randomBytes(32).toString('hex'),
+      10,
+    );
+
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .insert({
+        id: ulid(),
+        created_at: new Date().toISOString(),
+        email,
+        name: name || email,
+        password: lockedPassword,
+        profile_image: profile_image || '',
+        status: 1,
+      })
+      .select();
+
+    if (error) {
+      throw new InternalServerErrorException('Unable to process request');
+    }
+
+    return this.findByEmail(email);
   }
 
   async findUserPost(id: string) {

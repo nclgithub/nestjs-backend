@@ -24,7 +24,7 @@ export class PostsController {
   }
 
   @Get('post/:postId')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async findById(@Req() req, @Param('postId') postId: string) {
     const userId = req.user?.userId;
     return await this.postsService.findById(postId, userId);

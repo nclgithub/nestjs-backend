@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { AccountService } from '../account/account.service';
+import { OAuth2Client } from 'google-auth-library';
 
 @Injectable()
 export class AuthService {
@@ -33,6 +34,43 @@ export class AuthService {
         // Never expose password hash or refresh_token to the client
         const { password: _pw, refresh_token: _rt, ...safeUser } = user;
 
+        return { user: safeUser, accessToken, refreshToken };
+    }
+
+    async loginWithGoogle(idToken: string) {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const client = new OAuth2Client(clientId);
+
+        let payload: any;
+        try {
+            const ticket = await client.verifyIdToken({
+                idToken,
+                audience: clientId,
+            });
+            payload = ticket.getPayload();
+        } catch {
+            throw new UnauthorizedException('Invalid Google token');
+        }
+
+        if (!payload?.email) {
+            throw new UnauthorizedException('Google token missing email');
+        }
+
+        const { email, name, picture } = payload;
+
+        const user = await this.accountService.findOrCreateGoogleAccount({
+            email,
+            name: name ?? email,
+            profile_image: picture ?? '',
+        });
+
+        if (!user) throw new UnauthorizedException('Failed to create account');
+
+        const accessToken = this.generateAccessToken(user.id);
+        const refreshToken = this.generateRefreshToken(user.id);
+        await this.updateRefreshToken(user.id, refreshToken);
+
+        const { password: _pw, refresh_token: _rt, ...safeUser } = user;
         return { user: safeUser, accessToken, refreshToken };
     }
 

@@ -36,8 +36,8 @@ export class PostsService {
                 ...rest,
                 isLiked: id ? likes.some(like => like.user_id === id) : false,
                 isCollected: id ? collections.some(collection => collection.user_id === id) : false,
-                favorite_num: (likes_count as any)?.[0]?.count ?? 0,
-                saved_num: (collections_count as any)?.[0]?.count ?? 0,
+                favorite_num: Number((likes_count as any)?.[0]?.count ?? 0),
+                saved_num: Number((collections_count as any)?.[0]?.count ?? 0),
             };
         });
 
@@ -62,8 +62,8 @@ export class PostsService {
             ...rest,
             isLiked: id ? likes.some(like => like.user_id === id) : false,
             isCollected: id ? collections.some(collection => collection.user_id === id) : false,
-            favorite_num: (likes_count as any)?.[0]?.count ?? 0,
-            saved_num: (collections_count as any)?.[0]?.count ?? 0,
+            favorite_num: Number((likes_count as any)?.[0]?.count ?? 0),
+            saved_num: Number((collections_count as any)?.[0]?.count ?? 0),
         };
 
         return dataWithLikes;

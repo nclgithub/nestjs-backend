@@ -13,6 +13,11 @@ export class AuthController {
         return this.authService.login(body.email, body.password);
     }
 
+    @Post('google')
+    async googleLogin(@Body() body: { idToken: string }) {
+        return this.authService.loginWithGoogle(body.idToken);
+    }
+
     @Post('refresh')
     async refresh(@Body() body: { refreshToken: string }) {
         if (!body.refreshToken) {
