@@ -19,7 +19,7 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select('id, created_at, email, name, profile_image, profile_description, status');
+      .select('id, created_at, email, name, profile_image, profile_description, gender, birthday, location, status');
 
     if (error) {
       throw new InternalServerErrorException('Unable to process request');
@@ -60,7 +60,7 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select('id, created_at, name, profile_image, profile_description, status')
+      .select('id, created_at, name, profile_image, profile_description, gender, birthday, location, status')
       .eq('id', id)
       .maybeSingle();
 
@@ -184,250 +184,7 @@ export class AccountService {
     return this.findByEmail(email);
   }
 
-  async findUserPost(id: string) {
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('posts')
-      .select(
-        '*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count)',
-      )
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ likes, collections, likes_count, collections_count, ...rest }: any) => {
-      return {
-        ...rest,
-        isLiked: likes.length > 0,
-        isCollected: collections.length > 0,
-        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
-        saved_num: (collections_count as any)?.[0]?.count ?? 0,
-      };
-    });
-  }
-
-  async findUserPostNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('posts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-
-  async findUserFollower(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('follows')
-      .select('account:follower_id (id, name, profile_image)')
-      .eq('followed_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ account }) => account);
-  }
-
-  async findUserFollowerNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('followed_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-
-  async findUserFollowing(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('follows')
-      .select('account:followed_id (id, name, profile_image)')
-      .eq('follower_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ account }) => account);
-  }
-
-  async findUserFollowingNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('follows')
-      .select('*', { count: 'exact', head: true })
-      .eq('follower_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-
-  async findUserLikesPost(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('likes')
-      .select(
-        'posts:post_id (*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count))',
-      )
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ posts }: any) => {
-      if (!posts) return null;
-      const { likes, collections, likes_count, collections_count, ...rest } = posts;
-      return {
-        ...rest,
-        isLiked: (likes || []).some((l: any) => l.user_id === id),
-        isCollected: (collections || []).some((c: any) => c.user_id === id),
-        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
-        saved_num: (collections_count as any)?.[0]?.count ?? 0,
-      };
-    }).filter((item: any) => item !== null);
-  }
-
-  async findUserLikesNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('likes')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-
-  async findUserComments(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('comments')
-      .select('posts:post_id (*, account:user_id (id, name, profile_image))')
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ posts }) => posts);
-  }
-
-  async findUserCommentsNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('comments')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-
-  async findUserCollections(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { data, error } = await this.supabaseService
-      .getClient()
-      .from('collections')
-      .select('posts:post_id (*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count))')
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return (data || []).map(({ posts }: any) => {
-      if (!posts) return null;
-      const { likes, collections, likes_count, collections_count, ...rest } = posts;
-      return {
-        ...rest,
-        isLiked: (likes || []).some((l: any) => l.user_id === id),
-        isCollected: (collections || []).some((c: any) => c.user_id === id),
-        favorite_num: (likes_count as any)?.[0]?.count ?? 0,
-        saved_num: (collections_count as any)?.[0]?.count ?? 0,
-      };
-    }).filter((item: any) => item !== null);
-  }
-
-  async findUserCollectionsNumber(id: string) {
-    if (!id) {
-      throw new BadRequestException('ID must be provided');
-    }
-
-    const { count, error } = await this.supabaseService
-      .getClient()
-      .from('collections')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', id);
-
-    if (error) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    return count || 0;
-  }
-  async updateAccount(id: string, updateInfo: { name?: string; profile_description?: string; profile_image?: string }) {
+  async updateAccount(id: string, updateInfo: { name?: string; profile_description?: string; profile_image?: string; gender?: string; birthday?: string; location?: string }) {
     if (!id) {
       throw new BadRequestException('ID must be provided');
     }
@@ -437,7 +194,7 @@ export class AccountService {
       .from('account')
       .update(updateInfo)
       .eq('id', id)
-      .select('id, created_at, name, profile_image, profile_description, status')
+      .select('id, created_at, name, profile_image, profile_description, gender, birthday, location, status')
       .maybeSingle();
 
     if (error) {
@@ -445,5 +202,25 @@ export class AccountService {
     }
 
     return data;
+  }
+
+  /** Search accounts by name (case-insensitive partial match). Returns public fields only. */
+  async searchAccounts(keyword: string, limit = 20) {
+    if (!keyword || keyword.trim().length === 0) {
+      return [];
+    }
+
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('account')
+      .select('id, name, profile_image, profile_description')
+      .ilike('name', `%${keyword.trim()}%`)
+      .limit(limit);
+
+    if (error) {
+      throw new InternalServerErrorException('Unable to search accounts');
+    }
+
+    return data ?? [];
   }
 }

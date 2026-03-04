@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PostsService } from './posts.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -16,11 +16,51 @@ interface UploadedFileType {
 export class PostsController {
   constructor(private readonly postsService: PostsService) { }
 
-  @Get()
+  @Get('feed')
   @UseGuards(OptionalJwtAuthGuard)
-  async findAll(@Req() req) {
+  async getPostFeed(@Req() req, @Query('cursor') cursor?: number) {
     const userId = req.user?.userId;
-    return await this.postsService.findAll(userId);
+    return await this.postsService.getPostFeed(userId, cursor);
+  }
+
+  @Get('search')
+  @UseGuards(OptionalJwtAuthGuard)
+  async searchPosts(@Req() req, @Query('q') q: string) {
+    const userId = req.user?.userId;
+    return await this.postsService.searchPosts(q, userId);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async findUserPost(@Req() req) {
+    const userId = req.user.userId;
+    return await this.postsService.findUserPost(userId);
+  }
+
+  @Get('me/number')
+  @UseGuards(JwtAuthGuard)
+  async findUserPostNumber(@Req() req) {
+    const userId = req.user.userId;
+    return await this.postsService.findUserPostNumber(userId);
+  }
+
+  @Get('user/:id')
+  @UseGuards(JwtAuthGuard)
+  async findUserPostById(@Param('id') id: string) {
+    return await this.postsService.findUserPost(id);
+  }
+
+  @Get('user/:id/number')
+  @UseGuards(JwtAuthGuard)
+  async findUserPostNumberById(@Param('id') id: string) {
+    return await this.postsService.findUserPostNumber(id);
+  }
+
+  @Get('followers')
+  @UseGuards(JwtAuthGuard)
+  async getFollowersPostFeed(@Req() req, @Query('cursor') cursor?: number) {
+    const userId = req.user?.userId;
+    return await this.postsService.getFollowersPostFeed(userId, cursor);
   }
 
   @Get('post/:postId')

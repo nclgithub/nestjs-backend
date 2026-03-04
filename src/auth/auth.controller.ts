@@ -33,4 +33,14 @@ export class AuthController {
         const userId = req.user.userId;
         return this.authService.logout(userId);
     }
+
+    @Post('change-password')
+    @UseGuards(JwtAuthGuard)
+    async changePassword(
+        @Req() req,
+        @Body() body: { currentPassword: string; newPassword: string }
+    ) {
+        const userId = req.user.userId;
+        return this.authService.changePassword(userId, body.currentPassword, body.newPassword);
+    }
 }

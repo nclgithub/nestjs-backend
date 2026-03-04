@@ -11,13 +11,23 @@ import { CollectionsModule } from './collections/collections.module';
 import { LikesModule } from './likes/likes.module';
 import { AuthModule } from './auth/auth.module';
 import { DraftsModule } from './drafts/drafts.module';
+import { ConversationsModule } from './conversations/conversations.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
-  imports: [SupabaseModule, AccountModule, AuthModule, PostsModule, LikesModule, CommentsModule, FollowsModule, CollectionsModule,
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
-    DraftsModule
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    SupabaseModule,
+    AccountModule,
+    AuthModule,
+    PostsModule,
+    LikesModule,
+    CommentsModule,
+    FollowsModule,
+    CollectionsModule,
+    DraftsModule,
+    ConversationsModule,
+    NotificationsModule,   // ← exports NotificationsService for other modules
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { CollectionsService } from './collections.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
@@ -19,4 +19,19 @@ export class CollectionsController {
         const userId = req.user.userId;
         return await this.collectionsService.deleteCollection(post_id, userId);
     }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    async findUserCollections(@Req() req) {
+        const userId = req.user.userId;
+        return await this.collectionsService.findUserCollections(userId);
+    }
+
+    @Get('me/number')
+    @UseGuards(JwtAuthGuard)
+    async findUserCollectionsNumber(@Req() req) {
+        const userId = req.user.userId;
+        return await this.collectionsService.findUserCollectionsNumber(userId);
+    }
+
 }

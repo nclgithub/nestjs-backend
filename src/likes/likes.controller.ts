@@ -19,4 +19,18 @@ export class LikesController {
         const userId = req.user.userId;
         return await this.likesService.deleteLikes(postId, userId);
     }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    async findUserLikesPost(@Req() req) {
+        const userId = req.user.userId;
+        return await this.likesService.findUserLikesPost(userId);
+    }
+
+    @Get('me/number')
+    @UseGuards(JwtAuthGuard)
+    async findUserLikesNumber(@Req() req) {
+        const userId = req.user.userId;
+        return await this.likesService.findUserLikesNumber(userId);
+    }
 }

@@ -141,4 +141,29 @@ export class AuthService {
 
         if (error) throw new Error(error.message);
     }
+
+    async changePassword(userId: string, currentPassword: string, newPassword: string) {
+        const user = await this.accountService.findById(userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const passwordValid = await bcrypt.compare(currentPassword, user.password);
+        if (!passwordValid) {
+            throw new UnauthorizedException('Incorrect current password');
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const { error } = await this.supabaseService
+            .getClient()
+            .from('account')
+            .update({ password: hashedPassword })
+            .eq('id', userId);
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        return { message: 'Password updated successfully' };
+    }
 }

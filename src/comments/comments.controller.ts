@@ -19,4 +19,18 @@ export class CommentsController {
         const userId = req.user.userId;
         return await this.commentsService.deleteComment(commentInfo.post_id, userId, commentInfo.comment);
     }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    async findUserComments(@Req() req) {
+        const userId = req.user.userId;
+        return await this.commentsService.findUserComments(userId);
+    }
+
+    @Get('me/number')
+    @UseGuards(JwtAuthGuard)
+    async findUserCommentsNumber(@Req() req) {
+        const userId = req.user.userId;
+        return await this.commentsService.findUserCommentsNumber(userId);
+    }
 }

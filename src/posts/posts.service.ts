@@ -1,5 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    InternalServerErrorException,
+} from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
+import Redis from 'ioredis';
 
 const POST_IMAGES_BUCKET = 'post-images';
 
@@ -20,67 +25,286 @@ interface UploadedFile {
 
 @Injectable()
 export class PostsService {
-    constructor(private readonly supabaseService: SupabaseService) { }
+    private readonly redis: Redis | null;
 
-    async findAll(id?: string) {
-        const { data, error } = await this.supabaseService.getClient()
+    constructor(private readonly supabaseService: SupabaseService) {
+        try {
+            this.redis = new Redis({
+                host: '127.0.0.1',
+                port: 6379,
+                retryStrategy: (times) => {
+                    // Stop retrying after 3 times
+                    if (times > 3) {
+                        return null;
+                    }
+                    return Math.min(times * 50, 2000);
+                },
+                maxRetriesPerRequest: 1, // Fail fast if Redis is down instead of hanging
+            });
+
+            // Attach error listener to prevent unhandled rejections/events from crashing the app
+            this.redis.on('connect', () => {
+                //console.log('Redis connected');
+            });
+
+            this.redis.on('ready', () => {
+                //console.log('Redis ready');
+            });
+
+            this.redis.on('error', (err) => {
+                //console.error('Redis error:', err.message);
+            });
+        } catch (e) {
+            this.redis = null;
+        }
+    }
+
+    async getPostFeed(userId?: string, lastPostId?: number) {
+        const cacheKey = `post_feed:${userId || 'anonymous'}:${lastPostId || 'null'}`;
+
+        try {
+            if (this.redis) {
+                const cachedData = await this.redis.get(cacheKey);
+
+                if (cachedData) {
+                    return JSON.parse(cachedData);
+                }
+            }
+        } catch (err) {
+            // Suppress Redis error and gracefully fallback to querying Supabase
+            //console.warn('[Cache] Redis get failed, fetching from DB...');
+        }
+
+        const client = this.supabaseService.getClient();
+
+        // Get total posts count
+        const { count: totalPosts } = await client
             .from('posts')
-            .select('*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count)');
+            .select('*', { count: 'exact', head: true });
 
-        if (error) {
+        const { data: posts, error: postsError } = await client
+            .from('posts')
+            .select(`*,account:user_id (id, name, profile_image)`,)
+            .order('created_at', { ascending: false })
+            .limit(60);
+
+        if (postsError) {
             throw new InternalServerErrorException('Unable to fetch posts');
         }
 
-        const dataWithLikes = data.map(({ likes, collections, likes_count, collections_count, ...rest }) => {
-            return {
-                ...rest,
-                isLiked: id ? likes.some(like => like.user_id === id) : false,
-                isCollected: id ? collections.some(collection => collection.user_id === id) : false,
-                favorite_num: Number((likes_count as any)?.[0]?.count ?? 0),
-                saved_num: Number((collections_count as any)?.[0]?.count ?? 0),
-            };
-        });
+        if (!posts?.length) return { posts: [], nextCursor: null, totalPosts: totalPosts || 0 };
 
-        const shuffledData = dataWithLikes.sort(() => Math.random() - 0.5);
+        let startIndex = 0;
+        if (lastPostId) {
+            const index = posts.findIndex(p => p.id === lastPostId);
+            startIndex = index + 1;
+        }
 
-        return shuffledData;
+        let nextPosts = posts.slice(startIndex, startIndex + 15);
+
+        nextPosts = nextPosts.sort(() => Math.random() - 0.5);
+
+        const nextCursor = nextPosts.length ? nextPosts[nextPosts.length - 1].id : null;
+
+        const postIds = nextPosts.map((p) => p.id);
+
+        const { data: likeCounts } = await client
+            .from('likes')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        const { data: collectionCounts } = await client
+            .from('collections')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        let userLikesMap = new Set<number>();
+        let userCollectionsMap = new Set<number>();
+
+        if (userId) {
+            const { data: userLikes } = await client
+                .from('likes')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            const { data: userCollections } = await client
+                .from('collections')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            userLikesMap = new Set(userLikes?.map((l) => l.post_id));
+            userCollectionsMap = new Set(userCollections?.map((c) => c.post_id));
+        }
+
+        const result = nextPosts.map((post) => ({
+            ...post,
+            isLiked: userLikesMap.has(post.id),
+            isCollected: userCollectionsMap.has(post.id),
+            favorite_num:
+                likeCounts?.filter((l) => l.post_id === post.id)?.length ?? 0,
+            saved_num:
+                collectionCounts?.filter((c) => c.post_id === post.id)?.length ?? 0,
+        }));
+
+        const resultData = {
+            posts: result,
+            nextCursor,
+            totalPosts: totalPosts || 0,
+        };
+
+        try {
+            if (this.redis) {
+                // Cache the feed for 60 seconds to reduce database load
+                await this.redis.set(cacheKey, JSON.stringify(resultData), 'EX', 60);
+            }
+        } catch (err) {
+            // Ignore map error, fail silently
+        }
+
+        return resultData;
     }
 
     async findById(postId: string, id?: string) {
-        const { data, error } = await this.supabaseService.getClient()
+        const client = this.supabaseService.getClient();
+
+        const { data: post, error: postError } = await client
             .from('posts')
-            .select('*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count)')
+            .select('*, account:user_id (id, name, profile_image)')
             .eq('id', postId)
             .single();
 
-        if (error) {
+        if (postError) {
             throw new InternalServerErrorException('Unable to fetch post');
         }
 
-        const { likes, collections, likes_count, collections_count, ...rest } = data as any;
-        const dataWithLikes = {
-            ...rest,
-            isLiked: id ? likes.some(like => like.user_id === id) : false,
-            isCollected: id ? collections.some(collection => collection.user_id === id) : false,
-            favorite_num: Number((likes_count as any)?.[0]?.count ?? 0),
-            saved_num: Number((collections_count as any)?.[0]?.count ?? 0),
-        };
+        const { data: likeCounts } = await client
+            .from('likes')
+            .select('post_id')
+            .eq('post_id', postId);
 
-        return dataWithLikes;
+        const { data: collectionCounts } = await client
+            .from('collections')
+            .select('post_id')
+            .eq('post_id', postId);
+
+        let isLiked = false;
+        let isCollected = false;
+
+        if (id) {
+            const { data: userLikes } = await client
+                .from('likes')
+                .select('post_id')
+                .eq('user_id', id)
+                .eq('post_id', postId);
+
+            const { data: userCollections } = await client
+                .from('collections')
+                .select('post_id')
+                .eq('user_id', id)
+                .eq('post_id', postId);
+
+            isLiked = !!userLikes?.length;
+            isCollected = !!userCollections?.length;
+        }
+
+        return {
+            ...post,
+            isLiked,
+            isCollected,
+            favorite_num: likeCounts?.length ?? 0,
+            saved_num: collectionCounts?.length ?? 0,
+        };
+    }
+
+    async findUserPost(id: string) {
+        const client = this.supabaseService.getClient();
+
+        const { data: posts, error: postsError } = await client
+            .from('posts')
+            .select('*, account:user_id (id, name, profile_image)')
+            .eq('user_id', id);
+
+        if (postsError) {
+            throw new InternalServerErrorException(postsError.message);
+        }
+
+        if (!posts?.length) return [];
+
+        const postIds = posts.map((p) => p.id);
+
+        const { data: likeCounts } = await client
+            .from('likes')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        const { data: collectionCounts } = await client
+            .from('collections')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        let userLikesMap = new Set<number>();
+        let userCollectionsMap = new Set<number>();
+
+        if (id) {
+            const { data: userLikes } = await client
+                .from('likes')
+                .select('post_id')
+                .eq('user_id', id)
+                .in('post_id', postIds);
+
+            const { data: userCollections } = await client
+                .from('collections')
+                .select('post_id')
+                .eq('user_id', id)
+                .in('post_id', postIds);
+
+            userLikesMap = new Set(userLikes?.map((l) => l.post_id));
+            userCollectionsMap = new Set(userCollections?.map((c) => c.post_id));
+        }
+
+        return posts.map((post) => ({
+            ...post,
+            isLiked: userLikesMap.has(post.id),
+            isCollected: userCollectionsMap.has(post.id),
+            favorite_num:
+                likeCounts?.filter((l) => l.post_id === post.id)?.length ?? 0,
+            saved_num:
+                collectionCounts?.filter((c) => c.post_id === post.id)?.length ?? 0,
+        }));
+    }
+
+    async findUserPostNumber(id: string) {
+        if (!id) {
+            throw new BadRequestException('ID must be provided');
+        }
+
+        const { count, error } = await this.supabaseService
+            .getClient()
+            .from('posts')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', id);
+
+        if (error) {
+            throw new InternalServerErrorException(error.message);
+        }
+
+        return count || 0;
     }
 
     async findPostLikes(id: string) {
         const { data, error } = await this.supabaseService
             .getClient()
             .from('likes')
-            .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+            .select('user_id, account:user_id (id, name, profile_image)')
             .eq('post_id', id);
 
         if (error) {
             throw new InternalServerErrorException('Unable to fetch post likes');
         }
 
-        return data.map(item => item.posts);
+        return data.map((item) => item.account);
     }
 
     async findPostLikesNumber(id: string) {
@@ -101,7 +325,9 @@ export class PostsService {
         const { data, error } = await this.supabaseService
             .getClient()
             .from('comments')
-            .select('id, created_at, comment, post_id, user_id, account:user_id (id, name, profile_image)')
+            .select(
+                'id, created_at, comment, post_id, user_id, account:user_id (id, name, profile_image)',
+            )
             .eq('post_id', id);
 
         if (error) {
@@ -129,14 +355,16 @@ export class PostsService {
         const { data, error } = await this.supabaseService
             .getClient()
             .from('collections')
-            .select('posts:post_id (*, account:user_id (id, name, profile_image))')
+            .select('user_id, account:user_id (id, name, profile_image)')
             .eq('post_id', id);
 
         if (error) {
-            throw new InternalServerErrorException('Unable to fetch post collections');
+            throw new InternalServerErrorException(
+                'Unable to fetch post collections',
+            );
         }
 
-        return data.map(item => item.posts);
+        return data.map((item) => item.account);
     }
 
     async findPostCollectionsNumber(id: string) {
@@ -147,7 +375,9 @@ export class PostsService {
             .eq('post_id', id);
 
         if (error) {
-            throw new InternalServerErrorException('Unable to count post collections');
+            throw new InternalServerErrorException(
+                'Unable to count post collections',
+            );
         }
 
         return count;
@@ -164,9 +394,9 @@ export class PostsService {
         const ext = file.originalname.split('.').pop() ?? 'jpg';
         const fileName = `post_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
-        const { error } = await this.supabaseService.getClient()
-            .storage
-            .from(POST_IMAGES_BUCKET)
+        const { error } = await this.supabaseService
+            .getClient()
+            .storage.from(POST_IMAGES_BUCKET)
             .upload(fileName, file.buffer, {
                 contentType: file.mimetype,
                 upsert: false,
@@ -176,23 +406,34 @@ export class PostsService {
             throw new InternalServerErrorException('Image upload failed');
         }
 
-        const { data } = this.supabaseService.getClient()
-            .storage
-            .from(POST_IMAGES_BUCKET)
+        const { data } = this.supabaseService
+            .getClient()
+            .storage.from(POST_IMAGES_BUCKET)
             .getPublicUrl(fileName);
 
         return data.publicUrl;
     }
 
-    async createPost(userId: string, title: string, description: string, imageUrls?: string[]) {
-        const insertPayload: Record<string, any> = { created_at: new Date(), title, description, user_id: userId };
+    async createPost(
+        userId: string,
+        title: string,
+        description: string,
+        imageUrls?: string[],
+    ) {
+        const insertPayload: Record<string, any> = {
+            created_at: new Date(),
+            title,
+            description,
+            user_id: userId,
+        };
         if (imageUrls && imageUrls.length > 0) {
             // Supabase JS client does not support raw arrays as column values.
             // Serialize to a JSON string and parse it back on the frontend.
             insertPayload['post_image'] = JSON.stringify(imageUrls);
         }
 
-        const { data, error } = await this.supabaseService.getClient()
+        const { data, error } = await this.supabaseService
+            .getClient()
             .from('posts')
             .insert(insertPayload)
             .select('*')
@@ -203,5 +444,148 @@ export class PostsService {
         }
 
         return data;
+    }
+
+    async searchPosts(keyword: string, userId?: string, limit = 20) {
+        if (!keyword || keyword.trim().length === 0) {
+            return [];
+        }
+
+        const client = this.supabaseService.getClient();
+
+        const { data: posts, error } = await client
+            .from('posts')
+            .select('*, account:user_id (id, name, profile_image)')
+            .or(`title.ilike.%${keyword.trim()}%,description.ilike.%${keyword.trim()}%`)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            throw new InternalServerErrorException('Unable to search posts');
+        }
+
+        if (!posts?.length) return [];
+
+        const postIds = posts.map((p) => p.id);
+
+        const { data: likeCounts } = await client
+            .from('likes')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        const { data: collectionCounts } = await client
+            .from('collections')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        let userLikesMap = new Set<number>();
+        let userCollectionsMap = new Set<number>();
+
+        if (userId) {
+            const { data: userLikes } = await client
+                .from('likes')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            const { data: userCollections } = await client
+                .from('collections')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            userLikesMap = new Set(userLikes?.map((l) => l.post_id));
+            userCollectionsMap = new Set(userCollections?.map((c) => c.post_id));
+        }
+
+        return posts.map((post) => ({
+            ...post,
+            isLiked: userLikesMap.has(post.id),
+            isCollected: userCollectionsMap.has(post.id),
+            favorite_num: likeCounts?.filter((l) => l.post_id === post.id)?.length ?? 0,
+            saved_num: collectionCounts?.filter((c) => c.post_id === post.id)?.length ?? 0,
+        }));
+    }
+
+    async getFollowersPostFeed(userId: string, lastPostId?: number) {
+        const client = this.supabaseService.getClient();
+
+        const { data: following } = await client
+            .from('follows')
+            .select('followed_id')
+            .eq('follower_id', userId);
+
+        const followingIds = following?.map((f) => f.followed_id) ?? [];
+
+        const { data: posts, error: postsError } = await client
+            .from('posts')
+            .select(`*,account:user_id (id, name, profile_image)`)
+            .in('user_id', followingIds)
+            .order('created_at', { ascending: false })
+            .limit(60);
+
+        if (postsError) {
+            throw new InternalServerErrorException('Unable to fetch posts');
+        }
+
+        const totalPosts = posts.length;
+
+        if (!posts?.length) return { posts: [], nextCursor: null, totalPosts: 0 };
+
+        let startIndex = 0;
+        if (lastPostId) {
+            const index = posts.findIndex(p => p.id === lastPostId);
+            startIndex = index + 1;
+        }
+
+        let nextPosts = posts.slice(startIndex, startIndex + 15);
+
+        nextPosts = nextPosts.sort(() => Math.random() - 0.5);
+
+        const nextCursor = nextPosts.length ? nextPosts[nextPosts.length - 1].id : null;
+
+        const postIds = nextPosts.map((p) => p.id);
+
+        const { data: likeCounts } = await client
+            .from('likes')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        const { data: collectionCounts } = await client
+            .from('collections')
+            .select('post_id')
+            .in('post_id', postIds);
+
+        let userLikesMap = new Set<number>();
+        let userCollectionsMap = new Set<number>();
+
+        if (userId) {
+            const { data: userLikes } = await client
+                .from('likes')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            const { data: userCollections } = await client
+                .from('collections')
+                .select('post_id')
+                .eq('user_id', userId)
+                .in('post_id', postIds);
+
+            userLikesMap = new Set(userLikes?.map((l) => l.post_id));
+            userCollectionsMap = new Set(userCollections?.map((c) => c.post_id));
+        }
+
+        const result = nextPosts.map((post) => ({
+            ...post,
+            isLiked: userLikesMap.has(post.id),
+            isCollected: userCollectionsMap.has(post.id),
+            favorite_num:
+                likeCounts?.filter((l) => l.post_id === post.id)?.length ?? 0,
+            saved_num:
+                collectionCounts?.filter((c) => c.post_id === post.id)?.length ?? 0,
+        }));
+
+        return { posts: result, nextCursor, totalPosts };
     }
 }
