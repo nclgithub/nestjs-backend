@@ -84,7 +84,8 @@ export class CollectionsService {
             .getClient()
             .from('collections')
             .select('posts:post_id (*, account:user_id (id, name, profile_image), likes!left (user_id), collections!left (user_id), likes_count:likes(count), collections_count:collections(count))')
-            .eq('user_id', id);
+            .eq('user_id', id)
+            .order('created_at', { ascending: false });
 
         if (error) {
             throw new InternalServerErrorException(error.message);

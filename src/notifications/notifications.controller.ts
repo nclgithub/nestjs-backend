@@ -13,6 +13,13 @@ export class NotificationsController {
         return this.notificationsService.getNotifications(userId);
     }
 
+    @Get('me/unread-count')
+    @UseGuards(JwtAuthGuard)
+    async getUnreadCount(@Req() req) {
+        const userId = req.user.userId;
+        return this.notificationsService.getUnreadCount(userId);
+    }
+
     @Patch('me/read-all')
     @UseGuards(JwtAuthGuard)
     async markAllRead(@Req() req) {

@@ -4,6 +4,7 @@ import {
     InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import Redis from 'ioredis';
 
 const POST_IMAGES_BUCKET = 'post-images';
@@ -27,7 +28,10 @@ interface UploadedFile {
 export class PostsService {
     private readonly redis: Redis | null;
 
-    constructor(private readonly supabaseService: SupabaseService) {
+    constructor(
+        private readonly supabaseService: SupabaseService,
+        private readonly notificationsService: NotificationsService,
+    ) {
         try {
             this.redis = new Redis({
                 host: '127.0.0.1',
@@ -224,7 +228,8 @@ export class PostsService {
         const { data: posts, error: postsError } = await client
             .from('posts')
             .select('*, account:user_id (id, name, profile_image)')
-            .eq('user_id', id);
+            .eq('user_id', id)
+            .order('created_at', { ascending: false });
 
         if (postsError) {
             throw new InternalServerErrorException(postsError.message);
@@ -443,7 +448,80 @@ export class PostsService {
             throw new InternalServerErrorException('Unable to create post');
         }
 
+        // ── Fire notification to all followers asynchronously ──────────────────
+        (async () => {
+            try {
+                const { data: followers, error: fError } = await this.supabaseService
+                    .getClient()
+                    .from('follows')
+                    .select('follower_id')
+                    .eq('followed_id', userId);
+
+                if (fError || !followers) return;
+
+                for (const f of followers) {
+                    await this.notificationsService.createNotification({
+                        sender_id: userId,
+                        receiver_id: f.follower_id,
+                        type: 'new_post',
+                        post_id: data.id,
+                    });
+                }
+            } catch (err) {
+                // silently ignore errors to prevent them from crashing or bubbling up
+            }
+        })();
+
         return data;
+    }
+
+    async updatePost(
+        userId: string,
+        postId: string,
+        title: string,
+        description: string,
+        imageUrls?: string[],
+    ) {
+        const updatePayload: Record<string, any> = {
+            title,
+            description,
+            modified_at: new Date().toISOString(),
+        };
+        if (imageUrls && imageUrls.length > 0) {
+            updatePayload['post_image'] = JSON.stringify(imageUrls);
+        } else if (imageUrls && imageUrls.length === 0) {
+            updatePayload['post_image'] = null;
+        }
+
+        const { data, error } = await this.supabaseService
+            .getClient()
+            .from('posts')
+            .update(updatePayload)
+            .eq('id', postId)
+            .eq('user_id', userId)
+            .select('*')
+            .single();
+
+        if (error) {
+            throw new InternalServerErrorException('Unable to update post');
+        }
+
+        return data;
+    }
+
+    async deletePost(userId: string, postId: string) {
+        const { error } = await this.supabaseService
+            .getClient()
+            .from('posts')
+            .delete()
+            .eq('id', postId)
+            .eq('user_id', userId);
+
+        if (error) {
+            throw new InternalServerErrorException('Unable to delete post');
+        }
+
+        return { success: true };
     }
 
     async searchPosts(keyword: string, userId?: string, limit = 20) {

@@ -114,4 +114,18 @@ export class PostsController {
     const userId = req.user?.userId;
     return await this.postsService.createPost(userId, body.title, body.description, body.post_image);
   }
+
+  @Post(':id/update')
+  @UseGuards(JwtAuthGuard)
+  async updatePost(@Req() req, @Param('id') id: string, @Body() body: { title: string; description: string; post_image?: string[] }) {
+    const userId = req.user?.userId;
+    return await this.postsService.updatePost(userId, id, body.title, body.description, body.post_image);
+  }
+
+  @Post(':id/delete')
+  @UseGuards(JwtAuthGuard)
+  async deletePost(@Req() req, @Param('id') id: string) {
+    const userId = req.user?.userId;
+    return await this.postsService.deletePost(userId, id);
+  }
 }

@@ -83,7 +83,7 @@ export class AccountService {
     const { data, error } = await this.supabaseService
       .getClient()
       .from('account')
-      .select('id, email, password, refresh_token, name, profile_image, profile_description, status')
+      .select('id, email, password, refresh_token, name, profile_image, profile_description, gender, birthday, location, status')
       .eq('email', email)
       .maybeSingle();
 

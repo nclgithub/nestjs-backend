@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from 'src/supabase/supabase.service';
 
-export type NotificationType = 'like' | 'comment' | 'follow';
+export type NotificationType = 'like' | 'comment' | 'follow' | 'new_post';
 
 @Injectable()
 export class NotificationsService {
@@ -60,6 +60,22 @@ export class NotificationsService {
 
         if (error) throw error;
         return data;
+    }
+
+    // ── GET /notifications/me/unread-count ───────────────────────────────────
+    async getUnreadCount(userId: string): Promise<{ count: number }> {
+        const { count, error } = await this.supabaseService
+            .getClient()
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('receiver_id', userId)
+            .eq('is_read', false);
+
+        if (error) {
+            console.error('[Notifications] Failed to get unread count:', error.message);
+            return { count: 0 };
+        }
+        return { count: count ?? 0 };
     }
 
     // ── PATCH /notifications/me/read-all ──────────────────────────────────────
